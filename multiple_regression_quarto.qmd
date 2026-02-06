@@ -1,0 +1,278 @@
+---
+title: "Multiple Linear Regression"
+author: "Osman Omer Mustafa"
+date: "today"
+format:
+  html:
+    toc: true
+    code-fold: true
+    theme: cosmo
+    toc-location: left
+---
+
+## Load required libraries
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(broom)
+library(ggfortify)
+library(car)
+library(corrplot)
+```
+
+## Read data
+```{r message=FALSE}
+data <- read_csv("insurance.csv")
+```
+
+## Basic checks
+```{r}
+glimpse(data)
+summary(data)
+sum(is.na(data))
+```
+
+## Ensure categorical variables are factors
+```{r}
+data <- data %>% 
+  mutate(
+    sex = as.factor(sex),
+    smoker = as.factor(smoker),
+    region = as.factor(region)
+  )
+
+glimpse(data)
+```
+
+Categorical variables (sex, smoker, region) have been converted to factors for proper regression analysis.
+
+## Exploratory Data Analysis
+
+### Summary statistics by smoker status
+```{r}
+summary <- data %>% 
+  group_by(smoker) %>% 
+  summarise(
+    n = n(),
+    mean_charges = mean(charges),
+    sd_charges = sd(charges),
+    median_charges = median(charges)
+  )
+summary %>% knitr::kable(caption = "Summary Statistics by Smoker Status")
+```
+
+Smokers have substantially higher insurance charges (mean = $32,050) compared to non-smokers (mean = $8,434), 
+indicating smoking status is a major predictor of insurance costs.
+
+### Correlation matrix
+```{r}
+cor_matrix <- data %>% 
+  select(age, bmi, children, charges) %>% 
+  cor()
+cor_matrix %>% knitr::kable(digits = 2, caption = "Correlation matrix")
+```
+
+Age shows the strongest correlation with charges (0.30), followed by BMI (0.20). 
+Children has minimal correlation (0.07).Correlation analysis provides a preliminary indication of potential multicollinearity, 
+which is formally assessed later using Variance Inflation Factor (VIF).
+
+### Correlation plot
+```{r}
+corrplot(cor_matrix, method = "number", type = "upper")
+
+```
+
+Visual representation confirms age and BMI have moderate positive correlations with charges, 
+while children shows negligible association.
+
+### Distribution of charges
+```{r}
+ggplot(data, aes(x = charges)) +
+  geom_histogram(bins = 30, fill = "steelblue", alpha = 0.7) +
+  labs(
+    x = "Insurance Charges (USD)",
+    y = "Frequency",
+    title = "Distribution of Insurance Charges"
+  )+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+The distribution is right-skewed with a peak at lower charges and a long tail extending to higher values. 
+This is typical for insurance data where most individuals have moderate costs while few have very high expenses.
+
+### Charges by smoker status
+```{r}
+ggplot(data, aes(x = smoker, y = charges, fill = smoker)) +
+  geom_boxplot() +
+  labs(
+    x = "Smoker Status",
+    y = "Insurance Charges (USD)",
+    title = "Insurance Charges by Smoker Status"
+  ) +
+  theme(legend.position = "none")+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+The boxplot clearly illustrates the substantial difference in charges between smokers and non-smokers. 
+Smokers' median charges are approximately four times higher. Some non-smokers appear as outliers with charges 
+comparable to smokers, likely due to other risk factors.
+
+### Age vs Charges by smoker
+```{r message=FALSE}
+ggplot(data, aes(x = age, y = charges, color = smoker)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    x = "Age (Years)",
+    y = "Insurance Charges (USD)",
+    title = "Age vs Charges by Smoker Status",
+    color = "Smoker"
+  )+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+Both groups show positive relationships between age and charges, but smokers consistently pay higher premiums 
+across all age groups. The parallel trend lines suggest age effects are similar for both groups, 
+though at different baseline levels.
+
+### BMI vs Charges by smoker
+```{r message=FALSE}
+ggplot(data, aes(x = bmi, y = charges, color = smoker)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    x = "Body Mass Index (BMI)",
+    y = "Insurance Charges (USD)",
+    title = "BMI vs Charges by Smoker Status",
+    color = "Smoker"
+  )
+```
+
+BMI shows a positive association with charges for both groups. The relationship appears stronger among smokers, 
+This pattern suggests a potential interaction between BMI and smoking status, 
+which could be formally tested in future models using interaction terms.
+
+## Models
+
+### Simple Linear Regression
+Fit a baseline model using age as the sole predictor.
+```{r}
+model_simple <- lm(charges ~ age, data = data)
+tidy_res <- tidy(model_simple)
+tidy_res %>% knitr::kable(caption = "Simple Linear Regression")
+```
+
+### Multiple Linear Regression
+Fit a full model including all available predictors.
+```{r}
+model_full <- lm(charges ~ age + bmi + sex + children + smoker + region, data = data)
+tidy_res2 <- tidy(model_full)
+tidy_res2 %>% knitr::kable(caption = "Multiple Linear Regression")
+```
+
+### Model performance metrics
+```{r}
+glance(model_simple) %>% knitr::kable(caption = "Simple Model Performance")
+glance(model_full) %>% knitr::kable(caption = "Multiple Model Performance")
+```
+
+The multiple regression model shows substantial improvement over the simple model, with R² increasing from 0.089 to approximately 0.75, 
+indicating the full model explains 75% of variability in insurance charges.
+
+### Model comparison
+```{r}
+anova_res <- anova(model_simple, model_full)
+anova_res %>% knitr::kable(caption = "Anova Result")
+AIC_res <- AIC(model_simple, model_full)
+AIC_res %>% knitr::kable(caption = "AIC Result")
+BIC_res <- BIC(model_simple, model_full)
+BIC_res %>% knitr::kable(caption = "BIC Result")
+```
+
+ANOVA confirms the multiple model is significantly better than the simple model (p < 0.001). 
+Both AIC and BIC are substantially lower for the full model, further supporting its superiority.
+
+## Diagnostic plots
+
+### Residuals vs Fitted
+Check for linearity and homoscedasticity.
+```{r warning=FALSE , message=FALSE}
+autoplot(model_full, which = 1) +
+  labs(title = "Residuals vs Fitted (Multiple Regression)")
+```
+
+Residuals show relatively random scatter around zero, though some funneling is visible at higher fitted values, 
+suggesting mild heteroscedasticity. Overall, the linearity assumption appears reasonably satisfied for most observations, 
+with minor deviations at higher fitted values.
+
+
+### Normal Q-Q
+Assess normality of residuals.
+```{r}
+autoplot(model_full, which = 2) +
+  labs(title = "Normal Q-Q Plot")
+```
+
+Most points follow the diagonal line closely, indicating approximate normality. Some deviation appears at the tails, 
+particularly for extreme values, which is common in real-world data.
+
+### Scale-Location
+Examine homoscedasticity assumption.
+```{r}
+autoplot(model_full, which = 3) +
+  labs(title = "Scale-Location Plot")
+```
+
+The scale-location plot shows slight upward trend, confirming mild heteroscedasticity. 
+The variance of residuals increases somewhat with fitted values, though not severely.
+
+### Cook's Distance
+Identify influential observations.
+```{r}
+autoplot(model_full, which = 5) +
+  labs(title = "Cook's Distance")
+```
+
+No single observation appears to exert undue influence on the overall model estimates.
+, indicating minimal influence of individual points on model coefficients. 
+The model is not unduly affected by outliers.
+
+## Multicollinearity check
+```{r}
+vif_values <- vif(model_full)
+vif_values %>% knitr::kable(caption = "Multicollinearity check")
+```
+
+All VIF values are well below 5, indicating no multicollinearity concerns among predictors. 
+Each variable contributes unique information to the model.
+
+## Coefficients table
+```{r}
+coef_table <- tidy(model_full, conf.int = TRUE)
+coef_table %>% 
+  mutate(across(where(is.numeric), ~round(., 3))) %>%
+  knitr::kable(caption = "Regression Coefficients with 95% Confidence Intervals")
+```
+
+## Conclusion
+
+The multiple linear regression analysis reveals several key findings:
+
+**Model Performance:** The full model achieves R² = 0.75, explaining three-quarters of variability in insurance charges. 
+This represents substantial improvement over the simple age-only model (R² = 0.09).
+
+**Key Predictors:** Smoking status emerges as the dominant predictor, with smokers paying approximately $23,800 more than non-smokers, 
+holding all other factors constant. Age and BMI also show significant positive effects, with each additional year increasing charges 
+by roughly $257, and each BMI unit adding approximately $340.
+
+**Model Assumptions:** Diagnostic plots indicate the model satisfies key regression assumptions reasonably well. 
+Mild heteroscedasticity is present but not severe. Residuals approximate normality with slight tail deviations. 
+No multicollinearity issues exist among predictors.
+
+**Practical Implications:** The model demonstrates that smoking status, age, and BMI are critical factors in determining insurance costs. 
+These findings align with actuarial expectations and provide a solid foundation for understanding premium determinants.
+
+**Limitations:** The right-skewed nature of charges and presence of outliers suggest some individuals have unusually high costs 
+that may warrant separate investigation. Future analyses could explore interaction effects, particularly between smoking and other risk factors.
+
+Although the model explains a large proportion of variance, causal inference is not possible 
+due to the observational nature of the data.
