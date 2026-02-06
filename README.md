@@ -57,7 +57,7 @@ Key visualizations include:
 - BMI vs charges by smoker  
 - Diagnostic plots for multiple regression  
 
-![Residuales vs fitted](plots/residuals_vs _fitted.png)
+![Residuales vs fitted](plots/residuals_vs_fitted.png)
 
 ## 🧠 Conclusion
 The multiple linear regression model provides a strong explanatory framework for insurance charges, with smoking status, age, and BMI emerging as the most influential predictors.  
